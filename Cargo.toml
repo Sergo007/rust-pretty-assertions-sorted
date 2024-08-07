@@ -2,7 +2,7 @@
 authors = [
   "Darren Tsung <darren.tsung@gmail.com>",
 ]
-edition = "2018"
+edition = "2021"
 name = "pretty_assertions_sorted"
 version = "1.2.3"
 
@@ -17,9 +17,9 @@ readme = "README.md"
 
 [dependencies]
 darrentsung_debug_parser = "0.3.1"
-pretty_assertions = "1.0"
+pretty_assertions = "1.4"
 
 [dev-dependencies]
-chrono = "0.4.19"
-indoc = "1.0"
-serde_json = "1.0.85"
+chrono = "0.4"
+indoc = "2.0"
+serde_json = "1.0"

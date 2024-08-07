@@ -135,6 +135,7 @@ fn sort_maps(v: &mut Value) {
             }
         }
         Value::Set(s) => {
+            s.values.sort_by(|a, b| a.cmp(&b));
             for child_v in &mut s.values {
                 sort_maps(child_v);
             }
@@ -148,11 +149,13 @@ fn sort_maps(v: &mut Value) {
             }
         }
         Value::List(l) => {
+            l.values.sort_by(|a, b| a.cmp(&b));
             for child_v in &mut l.values {
                 sort_maps(child_v);
             }
         }
         Value::Tuple(t) => {
+            t.values.sort_by(|a, b| a.cmp(&b));
             for child_v in &mut t.values {
                 sort_maps(child_v);
             }
@@ -251,6 +254,47 @@ mod tests {
     }
 
     #[test]
+    fn sorts_list() {
+        #[allow(unused)]
+        #[derive(Debug)]
+        struct Foo {
+            value: f32,
+        }
+
+        for _ in 0..TEST_RERUNS_FOR_DETERMINISM {
+            let item = {
+                let mut map = Vec::new();
+                map.insert(0, Foo { value: 10.1 });
+                map.insert(1, Foo { value: 2.0 });
+                map.insert(2, Foo { value: -1.5 });
+                map
+            };
+
+            let expected = indoc!(
+                "[
+                    Foo {
+                        value: -1.5,
+                    },
+                    Foo {
+                        value: 10.1,
+                    },
+                    Foo {
+                        value: 2.0,
+                    },
+                ]"
+            );
+            let sorted = sorted_debug(item);
+            println!("{}", sorted);
+            // let comparison = Comparison::new(
+            //     expected,
+            //     sorted.as_str()
+            // ).to_string();
+            println!("{}", expected);
+            assert_eq!(sorted, expected);
+        }
+    }
+
+    #[test]
     fn sorts_object_with_hashmap() {
         #[derive(Debug)]
         #[allow(unused)]
@@ -337,10 +381,10 @@ mod tests {
                         value: 12.2,
                         bar: [
                             Bar {
-                                elo: 200,
+                                elo: -12,
                             },
                             Bar {
-                                elo: -12,
+                                elo: 200,
                             },
                         ],
                     },
@@ -397,16 +441,18 @@ mod tests {
                         value: 12,
                         bar: [
                             Bar {
-                                elo: 200,
+                                elo: -12,
                             },
                             Bar {
-                                elo: -12,
+                                elo: 200,
                             },
                         ],
                     }: \"foo\",
                 }"
             );
-            assert_eq!(sorted_debug(item), expected);
+            let sorted = sorted_debug(item);
+            // println!("{}", sorted);
+            assert_eq!(sorted, expected);
         }
     }
 
@@ -415,8 +461,8 @@ mod tests {
         for _ in 0..TEST_RERUNS_FOR_DETERMINISM {
             let item = {
                 let mut map = HashMap::new();
-                map.insert(chrono::NaiveDate::from_ymd(2000, 2, 14), "foo");
-                map.insert(chrono::NaiveDate::from_ymd(2001, 4, 2), "foo");
+                map.insert(chrono::NaiveDate::from_ymd_opt(2000, 2, 14).unwrap(), "foo");
+                map.insert(chrono::NaiveDate::from_ymd_opt(2001, 4, 2).unwrap(), "foo");
                 map
             };
 
