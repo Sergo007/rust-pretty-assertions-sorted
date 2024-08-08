@@ -61,12 +61,15 @@ macro_rules! assert_eq_sorted {
     (@ $left:expr, $right:expr, $maybe_semicolon:expr, $($arg:tt)*) => ({
         match (&($left), &($right)) {
             (left_val, right_val) => {
-                if !(*left_val == *right_val) {
+                let left_val = $crate::SortedDebug::new(left_val);
+                let right_val = $crate::SortedDebug::new(right_val);
+                
+                if !(format!("{:?}", left_val) == format!("{:?}", right_val)) {
                     // We create the comparison string outside the panic! call
                     // because creating the comparison string could panic itself.
                     let comparison_string = $crate::Comparison::new(
-                        &$crate::SortedDebug::new(left_val),
-                        &$crate::SortedDebug::new(right_val)
+                        &left_val,
+                        &right_val
                     ).to_string();
                     ::core::panic!("assertion failed: `(left == right)`{}{}\
                        \n\
@@ -292,6 +295,71 @@ mod tests {
             println!("{}", expected);
             assert_eq!(sorted, expected);
         }
+    }
+
+    #[test]
+    fn test_list_assert_eq_sorted() {
+        #[allow(unused)]
+        #[derive(Debug, PartialEq)]
+        struct Foo {
+            value: f32,
+        }
+
+        for _ in 0..TEST_RERUNS_FOR_DETERMINISM {
+            let item = {
+                let mut map = Vec::new();
+                map.insert(0, Foo { value: 10.1 });
+                map.insert(1, Foo { value: 2.0 });
+                map.insert(2, Foo { value: -1.5 });
+                map
+            };
+
+            let expected = vec![
+                Foo {
+                    value: -1.5,
+                },
+                Foo {
+                    value: 10.1,
+                },
+                Foo {
+                    value: 2.0,
+                },
+            ];
+            assert_eq_sorted!(item, expected);
+        }
+    }
+
+    #[test]
+    fn test_list_assert_eq_sorted_1() {
+        #[allow(unused)]
+        #[derive(Debug, Clone, PartialEq)]
+        struct Foo {
+            value: f32,
+        }
+
+
+        let item = {
+            let mut map = Vec::new();
+            map.insert(0, Foo { value: 10.1 });
+            map.insert(1, Foo { value: 2.0 });
+            map.insert(2, Foo { value: -1.5 });
+            map
+        };
+
+        let expected = vec![
+            Foo {
+                value: -1.5,
+            },
+            Foo {
+                value: 10.1,
+            },
+            Foo {
+                value: 2.0,
+            },
+        ];
+        
+        assert_eq_sorted!(item, expected);
+        
     }
 
     #[test]
