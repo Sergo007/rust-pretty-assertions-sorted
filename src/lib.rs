@@ -20,7 +20,7 @@
 //! To use the sorted version, import like this:
 //!
 //! ```rust
-//! use pretty_assertions_sorted::{assert_eq, assert_eq_sorted};
+//! use pretty_assertions_sorted::{assert_eq, assert_eq_all_sorted};
 //! ```
 //!
 //! `assert_eq` is provided as a re-export of `pretty_assertions::assert_eq` and should
@@ -51,18 +51,18 @@ pub use pretty_assertions::{assert_eq, assert_ne, Comparison};
 /// * Blocklist for field names that shouldn't be sorted
 /// * Sorting more than just maps (struct fields, lists, etc.)
 #[macro_export]
-macro_rules! assert_eq_sorted {
+macro_rules! assert_eq_all_sorted {
     ($left:expr, $right:expr$(,)?) => ({
-        $crate::assert_eq_sorted!(@ $left, $right, "", "");
+        $crate::assert_eq_all_sorted!(@ $left, $right, "", "");
     });
     ($left:expr, $right:expr, $($arg:tt)*) => ({
-        $crate::assert_eq_sorted!(@ $left, $right, ": ", $($arg)+);
+        $crate::assert_eq_all_sorted!(@ $left, $right, ": ", $($arg)+);
     });
     (@ $left:expr, $right:expr, $maybe_semicolon:expr, $($arg:tt)*) => ({
         match (&($left), &($right)) {
             (left_val, right_val) => {
-                let left_val = $crate::SortedDebug::new(left_val);
-                let right_val = $crate::SortedDebug::new(right_val);
+                let left_val = $crate::AllSortedDebug::new(left_val);
+                let right_val = $crate::AllSortedDebug::new(right_val);
                 
                 if !(format!("{:?}", left_val) == format!("{:?}", right_val)) {
                     // We create the comparison string outside the panic! call
@@ -83,6 +83,91 @@ macro_rules! assert_eq_sorted {
             }
         }
     });
+}
+
+/// This is a wrapper with similar functionality to [`assert_eq`], however, the
+/// [`Debug`] representation is sorted to provide deterministic output.
+///
+/// Not all [`Debug`] representations are sortable yet and this doesn't work with
+/// custom [`Debug`] implementations that don't conform to the format that #[derive(Debug)]
+/// uses, eg. `fmt.debug_struct()`, `fmt.debug_map()`, etc.
+///
+/// Don't use this if you want to test the ordering of the types that are sorted, since
+/// sorting will clobber any previous ordering.
+///
+/// Potential use-cases that aren't implemented yet:
+/// * Blocklist for field names that shouldn't be sorted
+/// * Sorting only maps in (struct fields, lists, etc.)
+#[macro_export]
+macro_rules! assert_eq_sorted {
+    ($left:expr, $right:expr$(,)?) => ({
+        $crate::assert_eq_sorted!(@ $left, $right, "", "");
+    });
+    ($left:expr, $right:expr, $($arg:tt)*) => ({
+        $crate::assert_eq_sorted!(@ $left, $right, ": ", $($arg)+);
+    });
+    (@ $left:expr, $right:expr, $maybe_semicolon:expr, $($arg:tt)*) => ({
+        match (&($left), &($right)) {
+            (left_val, right_val) => {
+                if !(*left_val == *right_val) {
+                    // We create the comparison string outside the panic! call
+                    // because creating the comparison string could panic itself.
+                    let comparison_string = $crate::Comparison::new(
+                        &$crate::SortedDebug::new(left_val),
+                        &$crate::SortedDebug::new(right_val)
+                    ).to_string();
+                    ::core::panic!("assertion failed: `(left == right)`{}{}\
+                       \n\
+                       \n{}\
+                       \n",
+                       $maybe_semicolon,
+                       format_args!($($arg)*),
+                       comparison_string,
+                    )
+                }
+            }
+        }
+    });
+}
+
+/// New-type wrapper around an object that sorts the fmt::Debug output when displayed for
+/// deterministic output.
+///
+/// This works through parsing the output and sorting the `debug_map()` type.
+///
+/// DISCLAIMER: This Debug implementation will panic if the inner value's Debug
+/// representation can't be sorted. This is used to notify users when used in tests. An
+/// alternative solution of falling back to non-sorted could be implemented.
+///
+/// Potential use-cases that aren't implemented yet:
+/// * Blocklist for field names that shouldn't be sorted
+/// * Sorting more than just maps (struct fields, lists, etc.)
+pub struct AllSortedDebug<T>(T);
+
+impl<T> AllSortedDebug<T> {
+    pub fn new(v: T) -> Self {
+        Self(v)
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for AllSortedDebug<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut value = match parse(&format!("{:?}", self.0)) {
+            Ok(value) => value,
+            Err(err) => {
+                ::core::panic!("Failed to parse Debug output for sorting (please use `assert_eq!` instead and/or file an issue for your use-case)!\nError: {}", err)
+            }
+        };
+
+        sort_all(&mut value);
+
+        // Replace one-line non-exhaustive objects with empty brackets separated by
+        // newlines. This changes output like: "Foo { .. }" with "Foo {\n}". "Foo {\n}" is
+        // more desirable because it diffs better against some multi-line output of "Foo {
+        // value: 10.0 }" (imagine the newlines please).
+        let formatted_output = format!("{:#?}", value).replace("{ .. }", "{\n}");
+        fmt::Display::fmt(&formatted_output, f)
+    }
 }
 
 /// New-type wrapper around an object that sorts the fmt::Debug output when displayed for
@@ -122,6 +207,49 @@ impl<T: fmt::Debug> fmt::Debug for SortedDebug<T> {
         // value: 10.0 }" (imagine the newlines please).
         let formatted_output = format!("{:#?}", value).replace("{ .. }", "{\n}");
         fmt::Display::fmt(&formatted_output, f)
+    }
+}
+
+fn sort_all(v: &mut Value) {
+    match v {
+        Value::Struct(s) => {
+            for ident_value_or_non_exhaustive in &mut s.values {
+                match ident_value_or_non_exhaustive {
+                    OrNonExhaustive::Value(ident_value) => {
+                        sort_maps(&mut ident_value.value);
+                    }
+                    OrNonExhaustive::NonExhaustive => (),
+                }
+            }
+        }
+        Value::Set(s) => {
+            s.values.sort_by(|a, b| a.cmp(&b));
+            for child_v in &mut s.values {
+                sort_maps(child_v);
+            }
+        }
+        Value::Map(map) => {
+            map.values.sort_by(|a, b| a.key.cmp(&b.key));
+
+            for key_value in &mut map.values {
+                sort_maps(&mut key_value.key);
+                sort_maps(&mut key_value.value);
+            }
+        }
+        Value::List(l) => {
+            l.values.sort_by(|a, b| a.cmp(&b));
+            for child_v in &mut l.values {
+                sort_maps(child_v);
+            }
+        }
+        Value::Tuple(t) => {
+            t.values.sort_by(|a, b| a.cmp(&b));
+            for child_v in &mut t.values {
+                sort_maps(child_v);
+            }
+        }
+        // No need to recurse for Term variant.
+        Value::Term(_) => (),
     }
 }
 
@@ -178,7 +306,7 @@ mod tests {
     const TEST_RERUNS_FOR_DETERMINISM: u32 = 100;
 
     fn sorted_debug<T: fmt::Debug>(v: T) -> String {
-        format!("{:#?}", SortedDebug(v))
+        format!("{:#?}", AllSortedDebug(v))
     }
 
     #[test]
@@ -298,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn test_list_assert_eq_sorted() {
+    fn test_list_assert_eq_all_sorted() {
         #[allow(unused)]
         #[derive(Debug, PartialEq)]
         struct Foo {
@@ -325,12 +453,12 @@ mod tests {
                     value: 2.0,
                 },
             ];
-            assert_eq_sorted!(item, expected);
+            assert_eq_all_sorted!(item, expected);
         }
     }
 
     #[test]
-    fn test_list_assert_eq_sorted_1() {
+    fn test_list_assert_eq_all_sorted_1() {
         #[allow(unused)]
         #[derive(Debug, Clone, PartialEq)]
         struct Foo {
@@ -358,7 +486,7 @@ mod tests {
             },
         ];
         
-        assert_eq_sorted!(item, expected);
+        assert_eq_all_sorted!(item, expected);
         
     }
 
@@ -557,7 +685,7 @@ Rest:
 \" {\\\"a\\\": Number(0)}\""
     )]
     fn panics_when_expression_cant_be_sorted() {
-        assert_eq_sorted!(serde_json::json!({"a":0}), "2");
+        assert_eq_all_sorted!(serde_json::json!({"a":0}), "2");
     }
 
     #[derive(PartialEq)]
@@ -583,7 +711,7 @@ Rest:
     #[test]
     #[should_panic(expected = "FooWithOptionalField {\n\u{1b}[31m<    value: 2.0,\u{1b}[0m\n }")]
     fn ui_looks_right_for_non_exhaustive_optional_fields() {
-        assert_eq_sorted!(
+        assert_eq_all_sorted!(
             FooWithOptionalField { value: Some(2.0) },
             FooWithOptionalField { value: None }
         );
