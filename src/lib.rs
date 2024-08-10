@@ -216,7 +216,7 @@ fn sort_all(v: &mut Value) {
             for ident_value_or_non_exhaustive in &mut s.values {
                 match ident_value_or_non_exhaustive {
                     OrNonExhaustive::Value(ident_value) => {
-                        sort_maps(&mut ident_value.value);
+                        sort_all(&mut ident_value.value);
                     }
                     OrNonExhaustive::NonExhaustive => (),
                 }
@@ -225,27 +225,27 @@ fn sort_all(v: &mut Value) {
         Value::Set(s) => {
             s.values.sort_by(|a, b| a.cmp(&b));
             for child_v in &mut s.values {
-                sort_maps(child_v);
+                sort_all(child_v);
             }
         }
         Value::Map(map) => {
             map.values.sort_by(|a, b| a.key.cmp(&b.key));
 
             for key_value in &mut map.values {
-                sort_maps(&mut key_value.key);
-                sort_maps(&mut key_value.value);
+                sort_all(&mut key_value.key);
+                sort_all(&mut key_value.value);
             }
         }
         Value::List(l) => {
             l.values.sort_by(|a, b| a.cmp(&b));
             for child_v in &mut l.values {
-                sort_maps(child_v);
+                sort_all(child_v);
             }
         }
         Value::Tuple(t) => {
             t.values.sort_by(|a, b| a.cmp(&b));
             for child_v in &mut t.values {
-                sort_maps(child_v);
+                sort_all(child_v);
             }
         }
         // No need to recurse for Term variant.
@@ -293,7 +293,7 @@ fn sort_maps(v: &mut Value) {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests_sorted_all {
     use super::*;
     use indoc::indoc;
     use std::assert_eq;
@@ -708,6 +708,341 @@ Rest:
     #[should_panic(expected = "FooWithOptionalField {\n\u{1b}[31m<    value: 2.0,\u{1b}[0m\n }")]
     fn ui_looks_right_for_non_exhaustive_optional_fields() {
         assert_eq_all_sorted!(
+            FooWithOptionalField { value: Some(2.0) },
+            FooWithOptionalField { value: None }
+        );
+    }
+
+    #[test]
+    fn outputs_nice_output_for_non_exhaustive_objects_with_optional_fields() {
+        assert_eq!(
+            sorted_debug(FooWithOptionalField { value: Some(10.0) }),
+            indoc!(
+                "FooWithOptionalField {
+                    value: 10.0,
+                }"
+            )
+        );
+
+        assert_eq!(
+            sorted_debug(FooWithOptionalField { value: None }),
+            indoc!(
+                "FooWithOptionalField {
+                }"
+            )
+        );
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use indoc::indoc;
+    use std::assert_eq;
+    use std::collections::HashMap;
+
+    const TEST_RERUNS_FOR_DETERMINISM: u32 = 100;
+
+    fn sorted_debug<T: fmt::Debug>(v: T) -> String {
+        format!("{:#?}", SortedDebug(v))
+    }
+
+    #[test]
+    fn noop_sorts() {
+        for _ in 0..TEST_RERUNS_FOR_DETERMINISM {
+            assert_eq!(sorted_debug(2), "2");
+        }
+    }
+
+    #[test]
+    fn sorts_hashmap() {
+        for _ in 0..TEST_RERUNS_FOR_DETERMINISM {
+            // Note that we have to create the HashMaps each try
+            // in order to induce non-determinism in the debug output.
+            let item = {
+                let mut map = HashMap::new();
+                map.insert(1, true);
+                map.insert(2, true);
+                map.insert(20, true);
+                map
+            };
+
+            let expected = indoc!(
+                "{
+                    1: true,
+                    2: true,
+                    20: true,
+                }"
+            );
+            assert_eq!(sorted_debug(item), expected);
+        }
+    }
+
+    #[test]
+    fn sorts_hashmaps_with_non_exhaustive_object_values() {
+        #[allow(unused)]
+        struct Foo {
+            value: f32,
+        }
+
+        impl fmt::Debug for Foo {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_struct("Foo")
+                    .field("value", &self.value)
+                    .finish_non_exhaustive()
+            }
+        }
+
+        for _ in 0..TEST_RERUNS_FOR_DETERMINISM {
+            let item = {
+                let mut map = HashMap::new();
+                map.insert(1, Foo { value: 10.1 });
+                map.insert(32, Foo { value: 2.0 });
+                map.insert(2, Foo { value: -1.5 });
+                map
+            };
+
+            let expected = indoc!(
+                "{
+                    1: Foo {
+                        value: 10.1,
+                        ..
+                    },
+                    2: Foo {
+                        value: -1.5,
+                        ..
+                    },
+                    32: Foo {
+                        value: 2.0,
+                        ..
+                    },
+                }"
+            );
+            assert_eq!(sorted_debug(item), expected);
+        }
+    }
+
+    #[test]
+    fn sorts_object_with_hashmap() {
+        #[derive(Debug)]
+        #[allow(unused)]
+        struct Foo {
+            bar: Bar,
+        }
+
+        #[derive(Debug)]
+        #[allow(unused)]
+        struct Bar {
+            count: HashMap<&'static str, Zed>,
+            value: usize,
+        }
+
+        #[derive(Debug)]
+        struct Zed;
+
+        for _ in 0..TEST_RERUNS_FOR_DETERMINISM {
+            let item = Foo {
+                bar: Bar {
+                    count: {
+                        let mut map = HashMap::new();
+                        map.insert("hello world", Zed);
+                        map.insert("lorem ipsum", Zed);
+                        map
+                    },
+                    value: 200,
+                },
+            };
+
+            let expected = indoc!(
+                "Foo {
+                    bar: Bar {
+                        count: {
+                            \"hello world\": Zed,
+                            \"lorem ipsum\": Zed,
+                        },
+                        value: 200,
+                    },
+                }"
+            );
+            assert_eq!(sorted_debug(item), expected);
+        }
+    }
+
+    #[test]
+    fn hashmap_with_object_values() {
+        #[derive(Debug)]
+        #[allow(unused)]
+        struct Foo {
+            value: f32,
+            bar: Vec<Bar>,
+        }
+
+        #[derive(Debug)]
+        #[allow(unused)]
+        struct Bar {
+            elo: i32,
+        }
+
+        for _ in 0..TEST_RERUNS_FOR_DETERMINISM {
+            let item = {
+                let mut map = HashMap::new();
+                map.insert(
+                    "foo",
+                    Foo {
+                        value: 12.2,
+                        bar: vec![Bar { elo: 200 }, Bar { elo: -12 }],
+                    },
+                );
+                map.insert(
+                    "foo2",
+                    Foo {
+                        value: -0.2,
+                        bar: vec![],
+                    },
+                );
+                map
+            };
+
+            let expected = indoc!(
+                "{
+                    \"foo\": Foo {
+                        value: 12.2,
+                        bar: [
+                            Bar {
+                                elo: 200,
+                            },
+                            Bar {
+                                elo: -12,
+                            },
+                        ],
+                    },
+                    \"foo2\": Foo {
+                        value: -0.2,
+                        bar: [],
+                    },
+                }"
+            );
+            assert_eq!(sorted_debug(item), expected);
+        }
+    }
+
+    #[test]
+    fn hashmap_with_object_keys() {
+        #[derive(Debug, PartialEq, Eq, Hash)]
+        struct Foo {
+            value: i32,
+            bar: Vec<Bar>,
+        }
+
+        #[derive(Debug, PartialEq, Eq, Hash)]
+        struct Bar {
+            elo: i32,
+        }
+
+        for _ in 0..TEST_RERUNS_FOR_DETERMINISM {
+            let item = {
+                let mut map = HashMap::new();
+                map.insert(
+                    Foo {
+                        value: 12,
+                        bar: vec![Bar { elo: 200 }, Bar { elo: -12 }],
+                    },
+                    "foo",
+                );
+                map.insert(
+                    Foo {
+                        value: -2,
+                        bar: vec![],
+                    },
+                    "foo2",
+                );
+                map
+            };
+
+            let expected = indoc!(
+                "{
+                    Foo {
+                        value: -2,
+                        bar: [],
+                    }: \"foo2\",
+                    Foo {
+                        value: 12,
+                        bar: [
+                            Bar {
+                                elo: 200,
+                            },
+                            Bar {
+                                elo: -12,
+                            },
+                        ],
+                    }: \"foo\",
+                }"
+            );
+            assert_eq!(sorted_debug(item), expected);
+        }
+    }
+
+    #[test]
+    fn hashmap_with_chrono_naivedate() {
+        for _ in 0..TEST_RERUNS_FOR_DETERMINISM {
+            let item = {
+                let mut map = HashMap::new();
+                map.insert(chrono::NaiveDate::from_ymd_opt(2000, 2, 14).unwrap(), "foo");
+                map.insert(chrono::NaiveDate::from_ymd_opt(2001, 4, 2).unwrap(), "foo");
+                map
+            };
+
+            dbg!(&item);
+
+            let expected = indoc!(
+                "{
+                    2000-02-14: \"foo\",
+                    2001-04-02: \"foo\",
+                }"
+            );
+            assert_eq!(sorted_debug(item), expected);
+        }
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Failed to parse Debug output for sorting (please use `assert_eq!` instead and/or file an issue for your use-case)!
+Error: Failed to consume all of string!
+Value:
+Object
+
+Rest:
+\" {\\\"a\\\": Number(0)}\""
+    )]
+    fn panics_when_expression_cant_be_sorted() {
+        assert_eq_sorted!(serde_json::json!({"a":0}), "2");
+    }
+
+    #[derive(PartialEq)]
+    #[allow(unused)]
+    struct FooWithOptionalField {
+        value: Option<f32>,
+    }
+
+    impl fmt::Debug for FooWithOptionalField {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let mut foo = f.debug_struct("FooWithOptionalField");
+            if let Some(value) = &self.value {
+                foo.field("value", value);
+                foo.finish()
+            } else {
+                foo.finish_non_exhaustive()
+            }
+        }
+    }
+
+    /// Test that the value field is displayed as missing (colored red) for optional fields
+    /// on non-exhaustive Debug implementations.
+    #[test]
+    #[should_panic(expected = "FooWithOptionalField {\n\u{1b}[31m<    value: 2.0,\u{1b}[0m\n }")]
+    fn ui_looks_right_for_non_exhaustive_optional_fields() {
+        assert_eq_sorted!(
             FooWithOptionalField { value: Some(2.0) },
             FooWithOptionalField { value: None }
         );
