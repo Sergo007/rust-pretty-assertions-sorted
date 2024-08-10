@@ -266,27 +266,23 @@ fn sort_maps(v: &mut Value) {
             }
         }
         Value::Set(s) => {
-            s.values.sort_by(|a, b| a.cmp(&b));
             for child_v in &mut s.values {
                 sort_maps(child_v);
             }
         }
         Value::Map(map) => {
             map.values.sort_by(|a, b| a.key.cmp(&b.key));
-
             for key_value in &mut map.values {
                 sort_maps(&mut key_value.key);
                 sort_maps(&mut key_value.value);
             }
         }
         Value::List(l) => {
-            l.values.sort_by(|a, b| a.cmp(&b));
             for child_v in &mut l.values {
                 sort_maps(child_v);
             }
         }
         Value::Tuple(t) => {
-            t.values.sort_by(|a, b| a.cmp(&b));
             for child_v in &mut t.values {
                 sort_maps(child_v);
             }
