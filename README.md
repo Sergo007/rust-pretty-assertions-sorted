@@ -1,4 +1,10 @@
-# Pretty Assertions (Sorted)
+# Pretty Assertions (Sorted) (FORK)
+
+[main repo](https://github.com/DarrenTsung/rust-pretty-assertions-sorted)
+
+In this fork add sort_all for ignore ordering in array
+
+If we dont need ignore ordering in array please use [this crate](https://crates.io/crates/pretty_assertions_sorted)
 
 This crate wraps the [pretty_assertions](https://raw.githubusercontent.com/colin-kiegel/rust-pretty-assertions) crate, which highlights differences
 in a test failure via a colorful diff.

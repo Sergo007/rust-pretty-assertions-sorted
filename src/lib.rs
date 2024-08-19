@@ -20,7 +20,7 @@
 //! To use the sorted version, import like this:
 //!
 //! ```rust
-//! use pretty_assertions_sorted::{assert_eq, assert_eq_all_sorted};
+//! use pretty_assertions_sorted_fork::{assert_eq, assert_eq_all_sorted};
 //! ```
 //!
 //! `assert_eq` is provided as a re-export of `pretty_assertions::assert_eq` and should
@@ -63,7 +63,7 @@ macro_rules! assert_eq_all_sorted {
             (left_val, right_val) => {
                 let left_val = $crate::AllSortedDebug::new(left_val);
                 let right_val = $crate::AllSortedDebug::new(right_val);
-                
+
                 if !(format!("{:?}", left_val) == format!("{:?}", right_val)) {
                     // We create the comparison string outside the panic! call
                     // because creating the comparison string could panic itself.
@@ -438,17 +438,7 @@ mod tests_sorted_all {
                 map
             };
 
-            let expected = vec![
-                Foo {
-                    value: -1.5,
-                },
-                Foo {
-                    value: 10.1,
-                },
-                Foo {
-                    value: 2.0,
-                },
-            ];
+            let expected = vec![Foo { value: -1.5 }, Foo { value: 10.1 }, Foo { value: 2.0 }];
             assert_eq_all_sorted!(item, expected);
         }
     }
@@ -461,7 +451,6 @@ mod tests_sorted_all {
             value: f32,
         }
 
-
         let item = {
             let mut map = Vec::new();
             map.insert(0, Foo { value: 10.1 });
@@ -470,20 +459,9 @@ mod tests_sorted_all {
             map
         };
 
-        let expected = vec![
-            Foo {
-                value: -1.5,
-            },
-            Foo {
-                value: 10.1,
-            },
-            Foo {
-                value: 2.0,
-            },
-        ];
-        
+        let expected = vec![Foo { value: -1.5 }, Foo { value: 10.1 }, Foo { value: 2.0 }];
+
         assert_eq_all_sorted!(item, expected);
-        
     }
 
     #[test]
@@ -733,7 +711,6 @@ Rest:
         );
     }
 }
-
 
 #[cfg(test)]
 mod tests {
