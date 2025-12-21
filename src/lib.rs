@@ -34,7 +34,7 @@
 //! This way the compile time of `cargo build` won't be affected!
 use std::fmt;
 
-use darrentsung_debug_parser::*;
+use heuristic_debug_parser::*;
 pub use pretty_assertions::{assert_eq, assert_ne, Comparison};
 
 /// This is a wrapper with similar functionality to [`assert_eq`], however, the
